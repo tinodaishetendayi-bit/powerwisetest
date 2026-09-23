@@ -1,0 +1,23 @@
+### Example requests (VS Code REST Client / JetBrains HTTP client)
+@base = http://localhost:3000
+
+### Register a meter
+POST {{base}}/meters
+Content-Type: application/json
+
+{ "meterId": "MTR-001" }
+
+### Buy P23.50 of electricity
+POST {{base}}/purchases
+Content-Type: application/json
+
+{ "meterId": "MTR-001", "amountInThebe": 2350, "paymentReference": "PAY-12345" }
+
+### Record usage since the previous reading
+POST {{base}}/meters/MTR-001/readings
+Content-Type: application/json
+
+{ "kwhUsed": 12.5 }
+
+### Check a meter
+GET {{base}}/meters/MTR-001

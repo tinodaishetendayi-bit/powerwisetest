@@ -1,0 +1,56 @@
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MeterStatus {
+  CONNECTED
+  LOW_BALANCE
+  DISCONNECTED
+}
+
+model Meter {
+  id          String      @id @default(uuid()) @db.Uuid
+  meterNumber String      @unique @map("meter_number") @db.VarChar(32)
+  balanceKwh  Decimal     @default(0) @map("balance_kwh") @db.Decimal(12, 2)
+  status      MeterStatus @default(DISCONNECTED)
+  createdAt   DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  purchases Purchase[]
+  readings  Reading[]
+
+  @@map("meters")
+}
+
+model Purchase {
+  id               String   @id @default(uuid()) @db.Uuid
+  meterId          String   @map("meter_id") @db.Uuid
+  paymentReference String   @unique @map("payment_reference") @db.VarChar(64)
+  amountThebe      Int      @map("amount_thebe")
+  kwh              Decimal  @db.Decimal(12, 2)
+  token            String   @unique @db.Char(20)
+  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  meter Meter @relation(fields: [meterId], references: [id], onDelete: Restrict)
+
+  @@index([meterId, createdAt])
+  @@map("purchases")
+}
+
+model Reading {
+  id        String   @id @default(uuid()) @db.Uuid
+  meterId   String   @map("meter_id") @db.Uuid
+  kwhUsed   Decimal  @map("kwh_used") @db.Decimal(12, 2)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  meter Meter @relation(fields: [meterId], references: [id], onDelete: Restrict)
+
+  @@index([meterId, createdAt])
+  @@map("readings")
+}

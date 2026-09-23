@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Powerwise Console</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #fff; --text: #1d2330; --muted: #667085; --border: #e3e6ea;
+    --accent: #1f6feb; --ok: #1a7f37; --warn: #b26b00; --bad: #c62828;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0f1216; --card: #171b21; --text: #e6e8eb; --muted: #9aa3ae; --border: #2a3039; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 15px/1.45 system-ui, sans-serif; background: var(--bg); color: var(--text); }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 48px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; }
+  p.sub { color: var(--muted); margin: 0 0 20px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin: 8px 0 4px; }
+  input { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px;
+          background: var(--bg); color: var(--text); font: inherit; }
+  .row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
+  button { padding: 8px 12px; border: 0; border-radius: 6px; background: var(--accent); color: #fff;
+           font: inherit; cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat .value { font-size: 22px; font-weight: 600; }
+  .stat .label { font-size: 12px; color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 13px; font-weight: 600; color: #fff; }
+  .CONNECTED { background: var(--ok); } .LOW_BALANCE { background: var(--warn); } .DISCONNECTED { background: var(--bad); }
+  .token { font-family: ui-monospace, monospace; font-size: 18px; letter-spacing: 1px; }
+  #log { display: flex; flex-direction: column; gap: 8px; }
+  .entry { border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .entry header { display: flex; justify-content: space-between; padding: 6px 10px; font-size: 13px;
+                  background: var(--bg); font-family: ui-monospace, monospace; }
+  .entry pre { margin: 0; padding: 10px; font-size: 12px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; }
+  .s2 { color: var(--ok); } .s4 { color: var(--warn); } .s5 { color: var(--bad); }
+  @media (max-width: 520px) { .stats { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Powerwise Console</h1>
+  <p class="sub">A simple page for trying the API by hand. Every request and response is shown in the log below.</p>
+
+  <div class="card" style="margin-bottom:16px">
+    <label for="meterId">Meter ID</label>
+    <input id="meterId" value="MTR-001">
+    <div class="row">
+      <button id="register">Register meter</button>
+      <button id="check" class="secondary">Check meter</button>
+    </div>
+    <div class="stats" style="margin-top:16px">
+      <div class="stat"><div class="value" id="balance">–</div><div class="label">Balance (kWh)</div></div>
+      <div class="stat"><div class="value" id="status">–</div><div class="label">Status</div></div>
+      <div class="stat"><div class="value" id="month">–</div><div class="label">Bought this month (kWh)</div></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h2>Buy electricity</h2>
+      <label for="amount">Amount in thebe</label>
+      <input id="amount" type="number" value="2350" min="0" step="1">
+      <div class="hint" id="pula">= P23.50 (minimum P5.00 = 500 thebe)</div>
+      <label for="ref">Payment reference</label>
+      <input id="ref">
+      <div class="row">
+        <button id="buy">Buy</button>
+        <button id="newRef" class="secondary">New reference</button>
+      </div>
+      <div class="hint">Press Buy twice with the same reference to see the duplicate payment protection.</div>
+      <div id="tokenBox" style="margin-top:12px; display:none">
+        <div class="label hint">Token</div>
+        <div class="token" id="token"></div>
+        <div class="hint" id="kwhBought"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Record usage</h2>
+      <label for="used">kWh used since the previous reading</label>
+      <input id="used" type="number" value="10" min="0" step="0.01">
+      <div class="row"><button id="read">Record reading</button></div>
+    </div>
+  </div>
+
+  <h2 style="margin-top:24px">Log</h2>
+  <div id="log"></div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  const meterId = () => $("meterId").value.trim();
+
+  function newReference() {
+    $("ref").value = "PAY-" + Date.now().toString(36).toUpperCase();
+  }
+
+  function showPula() {
+    const thebe = $("amount").value;
+    if (!/^\d+$/.test(thebe)) { $("pula").textContent = "Whole thebe only"; return; }
+    const padded = thebe.padStart(3, "0");
+    $("pula").textContent = `= P${Number(padded.slice(0, -2))}.${padded.slice(-2)} (minimum P5.00 = 500 thebe)`;
+  }
+
+  async function call(method, url, body) {
+    const response = await fetch(url, {
+      method,
+      headers: body ? { "content-type": "application/json" } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    const data = await response.json();
+    addLogEntry(method, url, body, response.status, data);
+    return { status: response.status, data };
+  }
+
+  function addLogEntry(method, url, body, status, data) {
+    const entry = document.createElement("div");
+    entry.className = "entry";
+    const request = body ? `\n${JSON.stringify(body)}` : "";
+    entry.innerHTML = `<header><span></span><strong class="s${String(status)[0]}">${status}</strong></header><pre></pre>`;
+    entry.querySelector("span").textContent = `${method} ${url}${request}`;
+    entry.querySelector("pre").textContent = JSON.stringify(data, null, 2);
+    $("log").prepend(entry);
+  }
+
+  function showMeter(meter) {
+    $("balance").textContent = meter.balanceKwh;
+    $("status").innerHTML = `<span class="badge ${meter.status}">${meter.status}</span>`;
+    $("month").textContent = meter.purchasedThisMonthKwh;
+  }
+
+  async function refreshMeter() {
+    const { status, data } = await call("GET", `/meters/${encodeURIComponent(meterId())}`);
+    if (status === 200) showMeter(data);
+  }
+
+  $("register").onclick = async () => {
+    const { status, data } = await call("POST", "/meters", { meterId: meterId() });
+    if (status === 201) showMeter(data);
+  };
+
+  $("check").onclick = refreshMeter;
+
+  $("buy").onclick = async () => {
+    const { status, data } = await call("POST", "/purchases", {
+      meterId: meterId(),
+      amountInThebe: Number($("amount").value),
+      paymentReference: $("ref").value.trim(),
+    });
+    if (status === 200 || status === 201) {
+      $("tokenBox").style.display = "block";
+      $("token").textContent = data.token.replace(/(\d{4})(?=\d)/g, "$1 ");
+      $("kwhBought").textContent = `${data.kwhPurchased} kWh` + (status === 200 ? " (duplicate: original purchase returned)" : "");
+      await refreshMeter();
+    }
+  };
+
+  $("read").onclick = async () => {
+    const { status } = await call("POST", `/meters/${encodeURIComponent(meterId())}/readings`, {
+      kwhUsed: Number($("used").value),
+    });
+    if (status === 201) await refreshMeter();
+  };
+
+  $("newRef").onclick = newReference;
+  $("amount").oninput = showPula;
+  newReference();
+  showPula();
+</script>
+</body>
+</html>
